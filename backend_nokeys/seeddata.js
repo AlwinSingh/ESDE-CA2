@@ -1,0 +1,173 @@
+const express = require("express");
+const config = require('./src/config/config');
+const { encrypt, decrypt, encryptEmail, decryptEmail } = require('./src/middlewares/crypto');
+
+//Reference: https://cloudinary.com/documentation/node_integration
+const cloudinary = require('cloudinary').v2;
+const pool = require('./src/config/database')
+
+
+cloudinary.config({
+    cloud_name: config.cloudinaryCloudName,
+    api_key: config.cloudinaryApiKey,
+    api_secret: config.cloudinaryApiSecret,
+    upload_preset: 'upload_to_design'
+});
+async function prepareRitaDataAndFiles() {
+    try {
+        // -> Encrypt
+        let createUserResult = await createUser('rita', encryptEmail('rita@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        console.log('Inspecting createUserResult variable\n', createUserResult)
+        let index = 1;
+        //I have prepared 12 design data for the user rita.
+        //The code here need to create 1 user record, 12 images in cloudinary and 12 records in the file table
+        for (index = 1; index <= 12; index++) {
+            let designTitle = `rita design ${index}`;
+            let designDescription = `rita design ${index} description text 1 text 2 text 3 text 4 ....`;
+            try {
+                let uploadResult = await uploadFileToCloudinary(`./rita_design_files/rita_${index}.png`);
+                let imageURL = uploadResult.imageURL; // encrypted.
+                let publicId = uploadResult.publicId;
+                console.log('Checking uploadResult before calling createFileData in try block\n', uploadResult);
+                try {
+                    let createFileDataResult = await createFileData(imageURL, publicId, createUserResult.insertId, designTitle, designDescription);
+                    if (createFileDataResult) {
+                        console.log(`rita_design${index}.png is uploaded. 1 record created in file table.`)
+                    }
+                } catch (error) {
+                    console.log(`rita_design${index}.png is is not uploaded. Did not create 1 record in file table.`)
+                    console.log(error);
+                }
+            } catch (error) {
+                console.log('uploadFileToCloudinary has error\n', error);
+
+            } //End of try .. catch for calling uploadFileToCloudinary
+        } //End of for loop block
+
+    } catch (error) {
+        console.log('Create rita user record has error\n', error);
+        return;
+    } finally {
+        console.log('Data seeding of rita record in user table, rita file record in file table and image files in cloud has completed.');
+        return;
+    }
+} //End of function prepareRitaDataAndFiles
+
+function createFileData(imageURL, publicId, userId, designTitle, designDescription) {
+    return new Promise((resolve, reject) => {
+        // Referred to https://www.codota.com/code/javascript/functions/mysql/Pool/getConnection
+        // to prepare the following code pattern which does not use callback technique (uses Promise technique)
+        pool.getConnection((err, connection) => {
+            if (err) {
+                console.log('Database connection error ', err);
+                resolve(err);
+            } else {
+                let query = `INSERT INTO file ( cloudinary_file_id, cloudinary_url , 
+                 design_title, design_description,created_by_id ) 
+                 VALUES ('${publicId}','${imageURL}','${designTitle}','${designDescription}','${userId}') `;
+
+                connection.query(query, [], (err, rows) => {
+                    if (err) {
+                        console.log('Error on query on creating record inside file table', err);
+                        reject(err);
+                    } else {
+                        resolve(rows);
+                    }
+                    connection.release();
+                });
+            }
+        });
+    }); //End of new Promise object creation
+
+} //End of createFileData
+
+//roleId=1 for admin roleId=2 for user
+function createUser(fullname, email, password, roleId) {
+
+    return new Promise((resolve, reject) => {
+        // Referred to https://www.codota.com/code/javascript/functions/mysql/Pool/getConnection
+        // to prepare the following code pattern which does not use callback technique (uses Promise technique)
+        pool.getConnection((err, connection) => {
+            if (err) {
+                console.log('Database connection error ', err);
+                resolve(err);
+            } else {
+                connection.query('INSERT INTO user ( full_name, email, user_password, role_id) VALUES (?,?,?,?) ', [fullname, email, password, roleId], (err, rows) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(rows);
+                    }
+                    connection.release();
+                });
+            }
+        });
+    }); //End of new Promise object creation
+} //End of createUser
+function uploadFileToCloudinary(filePath) {
+    return new Promise((resolve, reject) => {
+        //The following code will upload image to cloudinary
+        cloudinary.uploader.upload(filePath, { upload_preset: 'upload_to_design' })
+            .then((result) => {
+                //Inspect whether I can obtain the file storage id and the url from cloudinary
+                //after a successful upload.
+                //console.log({imageURL: result.url, publicId: result.public_id});
+                // -> Encrypt
+                let data = { imageURL: encrypt(result.url), publicId: encrypt(result.public_id), status: 'success' };
+                resolve(data);
+
+            }).catch((error) => {
+
+                let message = 'fail';
+                reject(error);
+
+            }); //End of try..catch
+    }); //End of Promise
+} //End of uploadFileToCloudinary
+
+
+
+async function prepareAdminRobertData() {
+    try {
+        let createUserResult = await createUser('robert', encryptEmail('robert@admin.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 1);
+        console.log('Inspecting createUserResult variable\n', createUserResult)
+    } catch (error) {
+        console.log('Create robert user record has error\n', error);
+        return;
+    } finally {
+        console.log('Data seeding of robert record in user table has completed.');
+        return;
+    }
+} //End of function prepareAdminRobertData 
+
+async function prepareDeignerUserData() {
+    try {
+        // -> Encrypt
+        let createUserResult = await createUser('bob', encryptEmail('bob@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('braddy', encryptEmail('braddy@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('josh', encryptEmail('josh@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('john', encryptEmail('john@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('fred', encryptEmail('fred@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('ashley', encryptEmail('ashley@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('amy', encryptEmail('amy@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('anita', encryptEmail('anita@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('eddy', encryptEmail('eddy@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('larry', encryptEmail('larry@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('ahtan', encryptEmail('ahtan@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        //Creating a user who is by default a user role record. This test record is used 
+        //for simulating the use case, whereby the administrator robert@admin.com login to change
+        //joe user to "admin" role.
+        createUserResult = await createUser('joe', encryptEmail('joe@admin.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        createUserResult = await createUser('gabby', encryptEmail('gabby@designer.com'), '$2b$10$K.0HwpsoPDGaB/atFBmmXOGTw4ceeg33.WrxJx/FeC9.gCyYvIbs6', 2);
+        console.log('Data seeding of user records in user table has completed.');
+    } catch (error) {
+        console.log(error);
+        return;
+    } finally {
+        return;
+    }
+} //End of function prepareDesignerUserData
+
+prepareRitaDataAndFiles(); //Create records in user and file table to describe Rita who has 12 file submissions.
+prepareAdminRobertData(); //Create admin role user.
+prepareDeignerUserData(); //Create additional 13 user records.

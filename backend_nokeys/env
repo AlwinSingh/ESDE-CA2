@@ -1,0 +1,9 @@
+DB_USERNAME=undefined
+DB_PASSWORD=undefined
+DB_DATABASE_NAME=undefined
+JWTKEY=undefined
+
+CLOUDINARY_BASE_URL=undefined
+CLOUDINARY_CLOUD_NAME=undefined
+CLOUDINARY_API_KEY=undefined
+CLOUDINARY_API_SECRET=undefined
